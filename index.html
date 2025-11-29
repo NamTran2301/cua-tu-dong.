@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang='vi'>
+<head>
+ <meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>
+ <title>Cửa Tự Động Trần Nam</title>
+ <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css' rel='stylesheet'>
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+ <style>
+  body{background:#f0f2f5;font-family:sans-serif}.card{margin:20px 0;border-radius:15px;box-shadow:0 4px 10px rgba(0,0,0,0.1);padding:20px;background:white}
+  .box{background:#0d6efd;color:white;padding:20px;border-radius:10px;text-align:center;margin-bottom:15px}
+  .num{font-size:4rem;font-weight:bold}.st{font-weight:bold;padding:10px;border-radius:20px;display:block;text-align:center;color:white}
+  .bg-o{background:#28a745}.bg-c{background:#6c757d}
+  .sens{padding:10px;border:1px solid #ccc;border-radius:5px;display:block;text-align:center;margin-top:5px;font-weight:bold}
+  .on{background:#ffc107;color:black;animation:bl 0.5s infinite}
+  @keyframes bl{50%{opacity:0.5}}
+  #mqtt-status {font-size: 12px; color: gray; text-align: center; margin-bottom: 10px;}
+ </style>
+</head>
+<body>
+<div class='container'>
+ <h3 class='text-center mt-3 text-primary'>Điều khiển cửa</h3>
+ <div id="mqtt-status">Đang kết nối Server...</div>
+ 
+ <div class='row'>
+  <div class='col-md-6'><div class='card'>
+    <div class='box'>Số lượng người<div id='cnt' class='num'>--</div></div>
+    <div class='row'><div class='col-6'>CỔNG VÀO<span id='so' class='sens'>--</span></div><div class='col-6'>CỔNG RA<span id='si' class='sens'>--</span></div></div>
+  </div></div>
+  <div class='col-md-6'><div class='card'>
+    <div class='mb-3'><span id='st' class='st bg-c'>--</span></div>
+    <div class='d-flex justify-content-between mb-3'>
+        <b><span id='md'>--</span></b>
+        <span><input type='checkbox' id='adm' onchange="sendCmd('admin', this.checked)"> Admin</span>
+    </div>
+    <div class='btn-group w-100 mb-2'>
+        <button id='ba' class='btn btn-outline-secondary' onclick="sendCmd('mode','auto')">AUTO</button>
+        <button id='bm' class='btn btn-outline-secondary' onclick="sendCmd('mode','manual')">MANUAL</button>
+    </div>
+    <div class='d-flex gap-2'>
+        <button id='bo' class='btn btn-success w-50' onclick="sendCmd('door','open')" disabled>MỞ</button>
+        <button id='bc' class='btn btn-danger w-50' onclick="sendCmd('door','close')" disabled>ĐÓNG</button>
+    </div>
+  </div></div>
+ </div>
+</div>
+
+<script>
+ // --- CẤU HÌNH TOPIC THEO YÊU CẦU: TRANNAM ---
+ const TOPIC_SUB = "trannam/cua_tu_dong/status"; 
+ const TOPIC_PUB = "trannam/cua_tu_dong/cmd";    
+ 
+ const host = "broker.hivemq.com";
+ const port = 8884; // Cổng bảo mật WSS
+ const clientID = "Web-TranNam-" + parseInt(Math.random() * 100000);
+ 
+ const client = new Paho.MQTT.Client(host, port, clientID);
+
+ client.connect({
+    useSSL: true, // Chạy được trên cả Github Pages
+    onSuccess: () => {
+        document.getElementById("mqtt-status").innerText = "Đã kết nối Server MQTT!";
+        document.getElementById("mqtt-status").style.color = "green";
+        client.subscribe(TOPIC_SUB);
+    },
+    onFailure: (e) => {
+        document.getElementById("mqtt-status").innerText = "Lỗi kết nối: " + e.errorMessage;
+    }
+ });
+
+ client.onMessageArrived = (msg) => {
+    try {
+        const d = JSON.parse(msg.payloadString);
+        renderUI(d);
+    } catch(e) { console.log("Lỗi JSON", e); }
+ };
+
+ function renderUI(d) {
+    document.getElementById('cnt').innerText = d.cnt;
+    
+    let so = document.getElementById('so');
+    so.className = d.so ? 'sens on' : 'sens';
+    so.innerText = d.so ? 'CÓ NGƯỜI' : 'Không';
+    
+    let si = document.getElementById('si');
+    si.className = d.si ? 'sens on' : 'sens';
+    si.innerText = d.si ? 'CÓ NGƯỜI' : 'Không';
+    
+    document.getElementById('md').innerText = d.mod.toUpperCase();
+    document.getElementById('adm').checked = d.adm;
+    
+    let st = document.getElementById('st');
+    st.innerText = d.sta == 'open' ? 'ĐANG MỞ' : 'ĐANG ĐÓNG';
+    st.className = d.sta == 'open' ? 'st bg-o' : 'st bg-c';
+    
+    let autoBtn = document.getElementById('ba');
+    let manuBtn = document.getElementById('bm');
+    let openBtn = document.getElementById('bo');
+    let closeBtn = document.getElementById('bc');
+
+    if (d.mod == 'auto') {
+        autoBtn.className = 'btn btn-primary';
+        manuBtn.className = 'btn btn-outline-secondary';
+        if (!d.adm) { openBtn.disabled = true; closeBtn.disabled = true; }
+        else { openBtn.disabled = false; closeBtn.disabled = false; }
+    } else {
+        manuBtn.className = 'btn btn-primary';
+        autoBtn.className = 'btn btn-outline-secondary';
+        openBtn.disabled = false; closeBtn.disabled = false;
+    }
+ }
+
+ function sendCmd(type, val) {
+    if (!client.isConnected()) { alert("Chưa kết nối!"); return; }
+    let payload = JSON.stringify({ t: type, v: val.toString() });
+    let message = new Paho.MQTT.Message(payload);
+    message.destinationName = TOPIC_PUB;
+    client.send(message);
+ }
+</script>
+</body>
+</html>
