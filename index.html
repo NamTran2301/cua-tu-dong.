@@ -8,16 +8,16 @@
  <style>
   body{background:#f0f2f5;font-family:sans-serif}
   
-  /* Tùy chỉnh Card để độ cao bằng nhau */
+  /* Tùy chỉnh Card để độ cao bằng nhau và căn giữa */
   .card {
       border-radius: 15px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.1);
       padding: 15px;
       background: white;
-      height: 100%; /* Quan trọng: Kéo dãn chiều cao tối đa */
+      height: 100%; /* Kéo dãn chiều cao tối đa */
       display: flex;
       flex-direction: column;
-      justify-content: center; /* Căn giữa nội dung theo chiều dọc */
+      justify-content: center; 
   }
 
   .box{background:#0d6efd;color:white;padding:10px;border-radius:10px;text-align:center;margin-bottom:10px}
@@ -34,17 +34,40 @@
   .table th, .table td {padding: 0.5rem; vertical-align: middle;}
   .time-col {width: 130px; font-weight: bold; color: #555;}
 
-  /* Nút bấm to hơn cho cân đối */
+  /* Nút bấm to hơn */
   .btn-custom { padding: 12px; font-weight: bold; }
+
+  /* Màn hình khóa PIN */
+  #login-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(240, 242, 245, 0.98);
+      z-index: 9999; display: flex; justify-content: center; align-items: center;
+      flex-direction: column;
+  }
+  .pin-box { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; width: 90%; max-width: 350px; }
+  .pin-input { font-size: 2rem; letter-spacing: 10px; text-align: center; margin: 20px 0; font-weight: bold; }
  </style>
 </head>
 <body>
+
+<!-- Màn hình nhập PIN -->
+<div id="login-overlay">
+    <div class="pin-box">
+        <h4 class="text-primary mb-3">NHẬP MÃ PIN</h4>
+        <p class="text-muted">Để truy cập điều khiển cửa</p>
+        <input type="password" id="pin-input" class="form-control pin-input" maxlength="4" placeholder="••••">
+        <button class="btn btn-primary w-100 py-2 mt-2 fw-bold" onclick="checkPin()">MỞ KHÓA</button>
+        <p id="pin-error" class="text-danger mt-2" style="display:none; font-weight:bold;">Sai mã PIN!</p>
+    </div>
+</div>
+
 <div class='container' style="max-width: 700px;">
  <h3 class='text-center mt-3 text-primary'>Điều khiển cửa</h3>
- <div id="mqtt-status">Đang kết nối Server...</div>
+ <div id="mqtt-status">Chờ nhập PIN...</div>
  
  <div class='row g-3 align-items-stretch'>
   
+  <!-- Cột Trái: Trạng thái -->
   <div class='col-md-6'>
       <div class='card'>
         <div class='box'>Số lượng người<div id='cnt' class='num'>--</div></div>
@@ -56,6 +79,7 @@
       </div>
   </div>
 
+  <!-- Cột Phải: Điều khiển -->
   <div class='col-md-6'>
       <div class='card'>
         <div class='d-flex justify-content-between mb-4 align-items-center p-2' style="background: #f8f9fa; border-radius: 10px;">
@@ -78,8 +102,10 @@
       </div>
   </div>
   
+  <!-- Cột Dưới: Lịch sử -->
   <div class='col-12 mt-3'>
-      <div class='card' style="display: block;"> <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class='card' style="display: block;">
+          <div class="d-flex justify-content-between align-items-center mb-2">
             <h5 class="m-0">Lịch sử ra/vào</h5>
             <button class="btn btn-sm btn-outline-danger" onclick="clearHistory()">Xóa log</button>
           </div>
@@ -92,7 +118,8 @@
                       </tr>
                   </thead>
                   <tbody id="history-log">
-                      </tbody>
+                      <!-- Dữ liệu log -->
+                  </tbody>
               </table>
           </div>
       </div>
@@ -102,29 +129,55 @@
 </div>
 
 <script>
- // --- CẤU HÌNH ---
+ // --- CẤU HÌNH MÃ PIN (Bạn có thể đổi số này) ---
+ const PIN_CODE = "2301"; 
+
+ // --- CẤU HÌNH HIVEMQ CLOUD ---
  const TOPIC_SUB = "trannam/cua_tu_dong/status"; 
  const TOPIC_PUB = "trannam/cua_tu_dong/cmd";    
- const host = "broker.hivemq.com";
- const port = 8884;
+ 
+ // Thông tin Server HiveMQ của bạn
+ const host = "c918386ec5d24b1db8bcbcec08162c0a.s1.eu.hivemq.cloud"; 
+ const port = 8884; // Cổng WSS
+ const username = "trannam";
+ const password = "Namtran2301";
+ 
  const clientID = "Web-Log-" + parseInt(Math.random() * 100000);
  
  let lastData = { cnt: -1, sta: "", mod: "" };
 
  const client = new Paho.MQTT.Client(host, port, clientID);
 
- client.connect({
-    useSSL: true,
-    onSuccess: () => {
-        document.getElementById("mqtt-status").innerText = "Đã kết nối Server MQTT!";
-        document.getElementById("mqtt-status").style.color = "green";
-        client.subscribe(TOPIC_SUB);
-        loadHistory();
-    },
-    onFailure: (e) => {
-        document.getElementById("mqtt-status").innerText = "Lỗi: " + e.errorMessage;
-    }
- });
+ // Hàm kiểm tra PIN
+ function checkPin() {
+     let input = document.getElementById("pin-input").value;
+     if(input === PIN_CODE) {
+         document.getElementById("login-overlay").style.display = "none";
+         connectMQTT(); // Mở khóa -> Kết nối
+     } else {
+         document.getElementById("pin-error").style.display = "block";
+         document.getElementById("pin-input").value = "";
+     }
+ }
+
+ function connectMQTT() {
+    document.getElementById("mqtt-status").innerText = "Đang kết nối Server...";
+    client.connect({
+        useSSL: true,
+        userName: username,
+        password: password,
+        onSuccess: () => {
+            document.getElementById("mqtt-status").innerText = "Đã kết nối Server Bảo Mật!";
+            document.getElementById("mqtt-status").style.color = "green";
+            client.subscribe(TOPIC_SUB);
+            loadHistory();
+        },
+        onFailure: (e) => {
+            document.getElementById("mqtt-status").innerText = "Lỗi: " + e.errorMessage;
+            document.getElementById("mqtt-status").style.color = "red";
+        }
+    });
+ }
 
  client.onMessageArrived = (msg) => {
     try {
@@ -202,13 +255,7 @@
  function addLogToTable(msg) {
      let table = document.getElementById('history-log');
      let now = new Date();
-     let dd = String(now.getDate()).padStart(2, '0');
-     let mm = String(now.getMonth() + 1).padStart(2, '0');
-     let hh = String(now.getHours()).padStart(2, '0');
-     let min = String(now.getMinutes()).padStart(2, '0');
-     let ss = String(now.getSeconds()).padStart(2, '0');
-     
-     let timeString = `<small>${dd}/${mm}</small> <b>${hh}:${min}:${ss}</b>`;
+     let timeString = `<small>${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}</small> <b>${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}</b>`;
      let row = `<tr><td class="time-col">${timeString}</td><td>${msg}</td></tr>`;
      table.innerHTML = row + table.innerHTML; 
      saveHistory(); 
